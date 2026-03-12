@@ -2,7 +2,16 @@
 // v2.0 - Added TensorFlow.js face detection + AI-generated image detection
 
 let tfLoaded = false;
+let tfLoadFailed = false;
 let blazefaceModel = null;
+
+// Suppress CSP EvalError from TF.js (non-fatal, falls back to heuristic detection)
+window.addEventListener('error', (e) => {
+  if (e.error instanceof EvalError && e.message && e.message.includes('Content Security Policy')) {
+    e.preventDefault();
+    tfLoadFailed = true;
+  }
+});
 
 window.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'REALITY_CHECK_OPEN') {
@@ -13,6 +22,18 @@ window.addEventListener('message', (event) => {
 // ===== TensorFlow.js Loading =====
 async function loadTF() {
   if (tfLoaded) return true;
+  if (tfLoadFailed) return false;
+  try {
+    // Test if page CSP allows script injection
+    const testScript = document.createElement('script');
+    testScript.textContent = 'void(0)';
+    document.head.appendChild(testScript);
+    testScript.remove();
+  } catch (e) {
+    console.warn('CSP blocks inline scripts, skipping TF.js');
+    tfLoadFailed = true;
+    return false;
+  }
   try {
     const tfScript = document.createElement('script');
     tfScript.src = chrome.runtime.getURL('lib/tf.min.js');
@@ -21,10 +42,13 @@ async function loadTF() {
       tfScript.onload = resolve;
       tfScript.onerror = reject;
     });
+    // Verify TF.js actually loaded (CSP may block eval internally)
+    if (!window.tf) { tfLoadFailed = true; return false; }
     tfLoaded = true;
     return true;
   } catch (e) {
     console.warn('TF.js load failed:', e);
+    tfLoadFailed = true;
     return false;
   }
 }
